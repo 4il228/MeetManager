@@ -5,7 +5,8 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from app.database import get_db
 from app.models.user import User
-from app.schemas.auth import LoginRequest, LoginResponse, LogoutResponse, UserResponse, ErrorResponse
+from app.schemas.auth import LoginRequest, LoginResponse, LogoutResponse, ErrorResponse
+from app.schemas.user import UserResponse
 from app.services.auth import verify_password, set_auth_cookies, clear_auth_cookies
 from app.dependencies import get_current_user
 
@@ -43,6 +44,7 @@ async def login(
             id=user.id,
             username=user.username,
             full_name=user.full_name,
+            is_admin=bool(user.is_admin),
         )
     )
 
@@ -59,4 +61,5 @@ async def get_me(current_user: User = Depends(get_current_user)):
         id=current_user.id,
         username=current_user.username,
         full_name=current_user.full_name,
+        is_admin=bool(current_user.is_admin),
     )

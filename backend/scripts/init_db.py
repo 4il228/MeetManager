@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     full_name TEXT NOT NULL,
+    is_admin INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -54,6 +55,12 @@ def init_db():
     cursor.execute("PRAGMA foreign_keys = ON")
 
     cursor.executescript(DDL)
+
+    cols = [row[1] for row in cursor.execute("PRAGMA table_info(users)").fetchall()]
+    if "is_admin" not in cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+        cursor.execute("UPDATE users SET is_admin = 1 WHERE username = 'admin'")
+
     conn.commit()
     conn.close()
     print(f"Database initialized at {os.path.abspath(DB_PATH)}")

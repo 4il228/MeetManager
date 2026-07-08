@@ -1,4 +1,4 @@
-const CACHE_NAME = 'meetmanager-v1';
+const CACHE_NAME = 'meetmanager-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -23,8 +23,17 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+  const url = new URL(request.url);
 
-  if (request.url.includes('/api/')) {
+  // API и dev-ресурсы Vite — только сеть
+  if (
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/src/') ||
+    url.pathname.startsWith('/@') ||
+    url.pathname.includes('.tsx') ||
+    url.pathname.includes('.ts') ||
+    request.method !== 'GET'
+  ) {
     event.respondWith(fetch(request));
     return;
   }

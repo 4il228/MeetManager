@@ -1,10 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
-import { format } from 'date-fns';
+import { addHours } from 'date-fns';
 import { TZDate } from '@date-fns/tz';
 import apiClient from '../api/client';
 import { useDebounce } from '../hooks/useDebounce';
 import { useAuth } from '../context/AuthContext';
+import {
+  MSK_TZ,
+  mskNow,
+  toMskDatetimeLocal,
+  mskDatetimeLocalToUtc,
+} from '../utils/timezone';
 import ConflictModal from './ConflictModal';
+import MskDatetimeInput from './MskDatetimeInput';
 
 interface User {
   id: string;
@@ -28,28 +35,22 @@ interface Conflict {
   end_time: string;
 }
 
+interface Meeting {
+  id: string;
+  title: string;
+  creator_id: string;
+  creator_name: string;
+  start_time: string;
+  end_time: string;
+  participants: { id: string; full_name: string }[];
+}
+
 interface MeetingFormModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (meeting: Meeting) => void;
   initialDate?: Date;
   initialHour?: number;
-}
-
-const MSK_TZ = 'Europe/Moscow';
-
-function toLocalDatetimeString(date: Date): string {
-  const msk = new TZDate(date, MSK_TZ);
-  return format(msk, "yyyy-MM-dd'T'HH:mm");
-}
-
-function mskToUtcString(localDatetime: string): string {
-  const [datePart, timePart] = localDatetime.split('T');
-  const [year, month, day] = datePart.split('-').map(Number);
-  const [hours, minutes] = timePart.split(':').map(Number);
-  const mskDate = new Date(year, month - 1, day, hours, minutes);
-  const utcDate = new TZDate(mskDate, 'UTC');
-  return format(utcDate, "yyyy-MM-dd'T'HH:mm:ss'Z'");
 }
 
 export default function MeetingFormModal({
@@ -71,6 +72,7 @@ export default function MeetingFormModal({
   const [showConflict, setShowConflict] = useState(false);
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [error, setError] = useState('');
 
   const debouncedSearch = useDebounce(searchQuery, 300);
   const debouncedParticipants = useDebounce(selectedUserIds, 300);
@@ -78,18 +80,33 @@ export default function MeetingFormModal({
   useEffect(() => {
     if (!isOpen) return;
     if (initialDate) {
+      const mskDay = new TZDate(initialDate, MSK_TZ);
       const base = initialHour !== undefined
-        ? new Date(initialDate.getFullYear(), initialDate.getMonth(), initialDate.getDate(), initialHour, 0)
-        : initialDate;
-      setStartTime(toLocalDatetimeString(base));
-      const end = new Date(base.getTime() + 60 * 60 * 1000);
-      setEndTime(toLocalDatetimeString(end));
+        ? new TZDate(
+            mskDay.getFullYear(),
+            mskDay.getMonth(),
+            mskDay.getDate(),
+            initialHour,
+            0,
+            0,
+            MSK_TZ,
+          )
+        : mskDay;
+      setStartTime(toMskDatetimeLocal(base));
+      setEndTime(toMskDatetimeLocal(addHours(base, 1)));
     } else {
-      const now = new TZDate(new Date(), MSK_TZ);
-      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1, 0);
-      setStartTime(toLocalDatetimeString(start));
-      const end = new Date(start.getTime() + 60 * 60 * 1000);
-      setEndTime(toLocalDatetimeString(end));
+      const now = mskNow();
+      const start = new TZDate(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+        now.getHours() + 1,
+        0,
+        0,
+        MSK_TZ,
+      );
+      setStartTime(toMskDatetimeLocal(start));
+      setEndTime(toMskDatetimeLocal(addHours(start, 1)));
     }
     setTitle('');
     setSelectedUserIds([]);
@@ -97,6 +114,7 @@ export default function MeetingFormModal({
     setBusySlots([]);
     setConflicts([]);
     setShowConflict(false);
+    setError('');
   }, [isOpen, initialDate, initialHour]);
 
   useEffect(() => {
@@ -121,8 +139,8 @@ export default function MeetingFormModal({
     setChecking(true);
     try {
       const { data } = await apiClient.post('/meetings/check-availability', {
-        start_time: mskToUtcString(startTime),
-        end_time: mskToUtcString(endTime),
+        start_time: mskDatetimeLocalToUtc(startTime),
+        end_time: mskDatetimeLocalToUtc(endTime),
         participant_ids: debouncedParticipants,
       });
       setBusySlots(data.busy || []);
@@ -147,19 +165,36 @@ export default function MeetingFormModal({
     if (!title.trim() || !startTime || !endTime) return;
     setLoading(true);
     try {
-      await apiClient.post('/meetings', {
+      const { data: createdMeeting } = await apiClient.post('/meetings', {
         title: title.trim(),
-        start_time: mskToUtcString(startTime),
-        end_time: mskToUtcString(endTime),
+        start_time: mskDatetimeLocalToUtc(startTime),
+        end_time: mskDatetimeLocalToUtc(endTime),
         participant_ids: selectedUserIds,
       });
-      onSuccess();
+      onSuccess(createdMeeting);
       onClose();
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { status?: number; data?: { conflicts?: Conflict[] } } };
-      if (axiosErr.response?.status === 409 && axiosErr.response?.data?.conflicts) {
-        setConflicts(axiosErr.response.data.conflicts);
-        setShowConflict(true);
+      const axiosErr = err as {
+        response?: {
+          status?: number;
+          data?: { detail?: string | { conflicts?: Conflict[] }; conflicts?: Conflict[] };
+        };
+      };
+      if (axiosErr.response?.status === 409) {
+        const data = axiosErr.response.data;
+        const conflictsList =
+          data?.conflicts ??
+          (typeof data?.detail === 'object' && data?.detail !== null
+            ? (data.detail as { conflicts?: Conflict[] }).conflicts
+            : undefined);
+        if (conflictsList?.length) {
+          setConflicts(conflictsList);
+          setShowConflict(true);
+        }
+      } else if (axiosErr.response?.status === 422) {
+        const detail = axiosErr.response?.data?.detail;
+        const msg = Array.isArray(detail) ? detail.map((d: { msg?: string }) => d.msg).join(', ') : String(detail);
+        setError(msg || 'Ошибка валидации');
       }
     } finally {
       setLoading(false);
@@ -172,8 +207,11 @@ export default function MeetingFormModal({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50">
-        <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50" onClick={onClose}>
+        <div
+          className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="p-6 space-y-5">
             <h2 className="text-lg font-bold text-gray-900">Новая встреча</h2>
 
@@ -188,24 +226,20 @@ export default function MeetingFormModal({
               />
             </div>
 
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+                {error}
+              </div>
+            )}
+
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Начало (МСК)</label>
-                <input
-                  type="datetime-local"
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-11"
-                />
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Начало</label>
+                <MskDatetimeInput value={startTime} onChange={setStartTime} />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Конец (МСК)</label>
-                <input
-                  type="datetime-local"
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-11"
-                />
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Конец</label>
+                <MskDatetimeInput value={endTime} onChange={setEndTime} />
               </div>
             </div>
 
@@ -226,7 +260,7 @@ export default function MeetingFormModal({
                     <button
                       key={u.id}
                       onClick={() => toggleUser(u.id)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors min-h-11 ${
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left min-h-11 ${
                         busy
                           ? 'bg-red-50 border border-red-200'
                           : selected
@@ -247,11 +281,13 @@ export default function MeetingFormModal({
                         <p className="text-sm font-medium text-gray-900 truncate">{u.full_name}</p>
                         <p className="text-xs text-gray-500 truncate">@{u.username}</p>
                       </div>
-                      {busy && (
-                        <span className="text-[10px] font-semibold text-red-600 bg-red-100 px-2 py-0.5 rounded-full">
-                          Занят
-                        </span>
-                      )}
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 min-w-[52px] text-center ${
+                        busy
+                          ? 'text-red-600 bg-red-100'
+                          : 'text-transparent bg-transparent'
+                      }`}>
+                        {busy ? 'Занят' : '\u00A0'}
+                      </span>
                     </button>
                   );
                 })}
@@ -259,9 +295,11 @@ export default function MeetingFormModal({
                   <p className="text-xs text-gray-400 text-center py-2">Нет результатов</p>
                 )}
               </div>
-              {checking && (
-                <p className="text-xs text-gray-400 mt-1">Проверка доступности...</p>
-              )}
+              <div className="min-h-4 mt-1">
+                {checking && (
+                  <p className="text-xs text-gray-400">Проверка доступности...</p>
+                )}
+              </div>
             </div>
           </div>
 

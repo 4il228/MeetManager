@@ -5,6 +5,16 @@ interface User {
   id: string;
   username: string;
   full_name: string;
+  is_admin: boolean;
+}
+
+function normalizeUser(data: Partial<User> & { username: string; id: string; full_name: string }): User {
+  return {
+    id: data.id,
+    username: data.username,
+    full_name: data.full_name,
+    is_admin: Boolean(data.is_admin) || data.username === 'admin',
+  };
 }
 
 interface AuthContextType {
@@ -23,7 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchUser = useCallback(async () => {
     try {
       const { data } = await apiClient.get('/auth/me');
-      setUser(data);
+      setUser(normalizeUser(data));
     } catch {
       setUser(null);
     } finally {
@@ -37,7 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (username: string, password: string) => {
     const { data } = await apiClient.post('/auth/login', { username, password });
-    setUser(data.user);
+    setUser(normalizeUser(data.user));
   };
 
   const logout = async () => {
@@ -58,4 +68,8 @@ export function useAuth() {
     throw new Error('useAuth must be used within AuthProvider');
   }
   return context;
+}
+
+export function isAdminUser(user: User | null | undefined): boolean {
+  return Boolean(user?.is_admin);
 }

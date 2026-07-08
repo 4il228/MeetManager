@@ -1,52 +1,47 @@
 import { useMemo } from 'react';
-import { utcToMsk, formatMsk } from '../utils/timezone';
-
-interface Meeting {
-  id: string;
-  title: string;
-  creator_id: string;
-  creator_name: string;
-  start_time: string;
-  end_time: string;
-  participants: { id: string; full_name: string }[];
-}
+import type { Meeting } from '../types/meeting';
+import { utcToMsk, formatMsk, mskNow } from '../utils/timezone';
+import { assignColumns } from '../utils/overlap';
 
 interface DayViewProps {
   meetings: Meeting[];
   onSlotClick?: (hour: number) => void;
+  onMeetingClick?: (meeting: Meeting) => void;
 }
 
 const HOUR_HEIGHT = 64;
 const START_HOUR = 8;
 const END_HOUR = 20;
 
-export default function DayView({ meetings, onSlotClick }: DayViewProps) {
+export default function DayView({ meetings, onSlotClick, onMeetingClick }: DayViewProps) {
   const hours = useMemo(
     () => Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i),
     []
   );
 
   const positionedMeetings = useMemo(() => {
-    return meetings.map((meeting) => {
+    const base = meetings.map((meeting) => {
       const startDate = utcToMsk(meeting.start_time);
       const endDate = utcToMsk(meeting.end_time);
       const startHour = startDate.getHours() + startDate.getMinutes() / 60;
       const endHour = endDate.getHours() + endDate.getMinutes() / 60;
       const top = (startHour - START_HOUR) * HOUR_HEIGHT;
       const height = Math.max((endHour - startHour) * HOUR_HEIGHT, 32);
-      return { ...meeting, top, height, startHour, endHour };
+      return { ...meeting, top, height, bottom: top + height, startHour, endHour };
     });
+    return assignColumns(base);
   }, [meetings]);
 
-  const now = new Date();
-  const mskNow = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Moscow' }));
-  const currentHour = mskNow.getHours() + mskNow.getMinutes() / 60;
+  const now = mskNow();
+  const currentHour = now.getHours() + now.getMinutes() / 60;
   const showCurrentTime = currentHour >= START_HOUR && currentHour <= END_HOUR;
   const currentTimeTop = (currentHour - START_HOUR) * HOUR_HEIGHT;
 
+  const totalHeight = hours.length * HOUR_HEIGHT;
+
   return (
     <div className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-      <div className="relative flex min-h-[{`${(END_HOUR - START_HOUR) * HOUR_HEIGHT}px`}]">
+      <div className="relative flex" style={{ height: `${totalHeight}px` }}>
         {/* Time Labels */}
         <aside className="w-16 flex-shrink-0 border-r border-gray-200">
           {hours.map((hour) => (
@@ -78,29 +73,36 @@ export default function DayView({ meetings, onSlotClick }: DayViewProps) {
           )}
 
           {/* Meeting Cards */}
-          {positionedMeetings.map((meeting) => (
-            <div
-              key={meeting.id}
-              className="absolute left-2 right-2 bg-blue-50 border-l-4 border-blue-600 rounded-lg p-3 shadow-sm cursor-pointer active:scale-[0.98] transition-transform"
-              style={{ top: `${meeting.top}px`, height: `${meeting.height}px` }}
-            >
-              <h3 className="text-sm font-semibold text-blue-700 truncate">
-                {meeting.title}
-              </h3>
-              <p className="text-xs text-blue-600 opacity-80 mt-0.5">
-                {formatMsk(meeting.start_time, 'HH:mm')} - {formatMsk(meeting.end_time, 'HH:mm')}
-              </p>
-              {meeting.height > 48 && (
-                <div className="mt-1 flex items-center gap-1.5">
-                  <span className="text-[11px] text-gray-600 font-medium truncate">
+          {positionedMeetings.map((meeting) => {
+            const widthPct = 100 / meeting.cols;
+            return (
+              <div
+                key={meeting.id}
+                className="absolute z-20 bg-blue-50 border-l-4 border-blue-600 rounded-lg px-3 py-1.5 shadow-sm cursor-pointer active:scale-[0.98] transition-transform overflow-hidden"
+                style={{
+                  top: `${meeting.top}px`,
+                  height: `${meeting.height}px`,
+                  left: `calc(${meeting.col * widthPct}% + 8px)`,
+                  width: `calc(${widthPct}% - 12px)`,
+                }}
+                onClick={() => onMeetingClick?.(meeting)}
+              >
+                <h3 className="text-sm font-semibold text-blue-700 truncate leading-tight">
+                  {meeting.title}
+                </h3>
+                <p className="text-xs text-blue-600 opacity-80 mt-0.5 leading-tight truncate">
+                  {formatMsk(meeting.start_time, 'HH:mm')} - {formatMsk(meeting.end_time, 'HH:mm')}
+                </p>
+                {meeting.height > 56 && (
+                  <p className="text-[11px] text-gray-600 font-medium truncate mt-1 leading-tight">
                     {meeting.participants.length > 0
                       ? meeting.participants.map((p) => p.full_name.split(' ')[0]).join(', ')
                       : meeting.creator_name.split(' ')[0]}
-                  </span>
-                </div>
-              )}
-            </div>
-          ))}
+                  </p>
+                )}
+              </div>
+            );
+          })}
 
           {/* Empty Slots */}
           {hours.slice(0, -1).map((hour) => {
@@ -111,7 +113,7 @@ export default function DayView({ meetings, onSlotClick }: DayViewProps) {
             return (
               <div
                 key={`slot-${hour}`}
-                className="absolute left-2 right-2 h-16 border-2 border-dashed border-gray-200 rounded-lg flex items-center justify-center cursor-pointer hover:border-blue-400/50 transition-colors active:bg-gray-50"
+                className="absolute left-2 right-2 z-0 h-16 border-2 border-dashed border-gray-200 rounded-lg flex items-center justify-center cursor-pointer hover:border-blue-400/50 transition-colors active:bg-gray-50"
                 style={{ top: `${(hour - START_HOUR) * HOUR_HEIGHT}px` }}
                 onClick={() => onSlotClick?.(hour)}
               >

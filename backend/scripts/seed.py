@@ -26,9 +26,11 @@ def seed():
             bcrypt.gensalt(rounds=12),
         ).decode("utf-8")
         cursor.execute(
-            "INSERT OR IGNORE INTO users (username, password_hash, full_name) VALUES (?, ?, ?)",
-            (username, password_hash, full_name),
+            "INSERT OR IGNORE INTO users (username, password_hash, full_name, is_admin) VALUES (?, ?, ?, ?)",
+            (username, password_hash, full_name, 1 if username == "admin" else 0),
         )
+
+    cursor.execute("UPDATE users SET is_admin = 1 WHERE username = 'admin'")
 
     conn.commit()
     count = cursor.execute("SELECT count(*) FROM users").fetchone()[0]

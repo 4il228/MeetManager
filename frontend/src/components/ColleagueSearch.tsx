@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import apiClient from '../api/client';
 
 interface User {
@@ -17,6 +17,17 @@ export default function ColleagueSearch({ onSelectUser, selectedUserId }: Collea
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const searchUsers = useCallback(async (search: string) => {
     if (!search.trim()) {
@@ -55,7 +66,7 @@ export default function ColleagueSearch({ onSelectUser, selectedUserId }: Collea
   };
 
   return (
-    <div className="relative">
+    <div className="relative" ref={containerRef}>
       <div className="relative flex items-center">
         <span className="material-symbols-outlined absolute left-3 text-gray-500 text-[20px]">
           person_search

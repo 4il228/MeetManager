@@ -1,6 +1,4 @@
 from pydantic import BaseModel, Field
-from typing import Optional
-import re
 
 
 class LoginRequest(BaseModel):
@@ -8,17 +6,8 @@ class LoginRequest(BaseModel):
     password: str = Field(..., min_length=1)
 
 
-class UserResponse(BaseModel):
-    id: str
-    username: str
-    full_name: str
-
-    class Config:
-        from_attributes = True
-
-
 class LoginResponse(BaseModel):
-    user: UserResponse
+    user: "UserResponse"
 
 
 class LogoutResponse(BaseModel):
@@ -27,3 +16,8 @@ class LogoutResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     detail: str
+
+
+from app.schemas.user import UserResponse  # noqa: E402
+
+LoginResponse.model_rebuild()

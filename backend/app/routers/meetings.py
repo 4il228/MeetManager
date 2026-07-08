@@ -30,8 +30,8 @@ async def get_meetings(
     """Get meetings for a date range, optionally filtered by user."""
     query = (
         select(Meeting)
-        .where(Meeting.start_time >= start_date)
-        .where(Meeting.end_time <= end_date)
+        .where(Meeting.start_time < end_date)
+        .where(Meeting.end_time > start_date)
     )
     
     if user_id:

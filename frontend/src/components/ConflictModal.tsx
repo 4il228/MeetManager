@@ -1,3 +1,5 @@
+import { formatTimeRange } from '../utils/timezone';
+
 interface Conflict {
   user_id: string;
   full_name: string;
@@ -13,7 +15,7 @@ interface ConflictModalProps {
 
 export default function ConflictModal({ conflicts, onClose }: ConflictModalProps) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
       <div className="bg-white rounded-2xl shadow-xl w-[calc(100%-2rem)] max-w-sm p-6">
         <div className="flex flex-col items-center text-center">
           <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mb-4">
@@ -31,7 +33,7 @@ export default function ConflictModal({ conflicts, onClose }: ConflictModalProps
               <p className="text-sm font-semibold text-gray-900">{conflict.full_name}</p>
               <p className="text-xs text-gray-600 mt-0.5">{conflict.meeting_title}</p>
               <p className="text-xs text-gray-500 mt-0.5">
-                {conflict.start_time.slice(11, 16)} - {conflict.end_time.slice(11, 16)}
+                {formatTimeRange(conflict.start_time, conflict.end_time)} МСК
               </p>
             </div>
           ))}

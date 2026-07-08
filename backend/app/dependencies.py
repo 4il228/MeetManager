@@ -28,3 +28,9 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Не авторизован")
 
     return user
+
+
+async def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    return current_user

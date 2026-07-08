@@ -1,21 +1,15 @@
 import { useMemo } from 'react';
 import { format, addDays, startOfWeek } from 'date-fns';
-import { utcToMsk, formatMsk } from '../utils/timezone';
-
-interface Meeting {
-  id: string;
-  title: string;
-  creator_id: string;
-  creator_name: string;
-  start_time: string;
-  end_time: string;
-  participants: { id: string; full_name: string }[];
-}
+import { TZDate } from '@date-fns/tz';
+import type { Meeting } from '../types/meeting';
+import { utcToMsk, formatMsk, mskNow, mskDateKey, MSK_TZ } from '../utils/timezone';
+import { assignColumns } from '../utils/overlap';
 
 interface WeekViewProps {
   meetings: Meeting[];
   currentDate: Date;
   onDayClick?: (date: Date) => void;
+  onMeetingClick?: (meeting: Meeting) => void;
 }
 
 const HOUR_HEIGHT = 48;
@@ -23,8 +17,11 @@ const START_HOUR = 8;
 const END_HOUR = 20;
 const DAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
-export default function WeekView({ meetings, currentDate, onDayClick }: WeekViewProps) {
-  const weekStart = useMemo(() => startOfWeek(currentDate, { weekStartsOn: 1 }), [currentDate]);
+export default function WeekView({ meetings, currentDate, onDayClick, onMeetingClick }: WeekViewProps) {
+  const weekStart = useMemo(
+    () => startOfWeek(new TZDate(currentDate, MSK_TZ), { weekStartsOn: 1 }),
+    [currentDate],
+  );
 
   const weekDays = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
@@ -51,7 +48,7 @@ export default function WeekView({ meetings, currentDate, onDayClick }: WeekView
     return map;
   }, [meetings, weekDays]);
 
-  const today = format(new Date(), 'yyyy-MM-dd');
+  const today = mskDateKey(mskNow());
 
   return (
     <div className="flex-1 overflow-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
@@ -87,7 +84,7 @@ export default function WeekView({ meetings, currentDate, onDayClick }: WeekView
           {hours.map((hour) => (
             <div key={hour} className="h-12 flex items-start justify-center pt-0.5">
               <span className="text-[9px] font-semibold text-gray-400">
-                {String(hour).padStart(2, '0')}
+                {String(hour).padStart(2, '0')}:00
               </span>
             </div>
           ))}
@@ -107,25 +104,34 @@ export default function WeekView({ meetings, currentDate, onDayClick }: WeekView
               ))}
 
               {/* Meeting blocks */}
-              {dayMeetings.map((meeting) => {
-                const startDate = utcToMsk(meeting.start_time);
-                const endDate = utcToMsk(meeting.end_time);
-                const startHour = startDate.getHours() + startDate.getMinutes() / 60;
-                const endHour = endDate.getHours() + endDate.getMinutes() / 60;
-                const top = (startHour - START_HOUR) * HOUR_HEIGHT;
-                const height = Math.max((endHour - startHour) * HOUR_HEIGHT, 20);
-
+              {assignColumns(
+                dayMeetings.map((meeting) => {
+                  const startDate = utcToMsk(meeting.start_time);
+                  const endDate = utcToMsk(meeting.end_time);
+                  const startHour = startDate.getHours() + startDate.getMinutes() / 60;
+                  const endHour = endDate.getHours() + endDate.getMinutes() / 60;
+                  const top = (startHour - START_HOUR) * HOUR_HEIGHT;
+                  const height = Math.max((endHour - startHour) * HOUR_HEIGHT, 20);
+                  return { ...meeting, top, height, bottom: top + height };
+                }),
+              ).map((meeting) => {
+                const widthPct = 100 / meeting.cols;
                 return (
                   <div
                     key={meeting.id}
-                    className="absolute left-0.5 right-0.5 bg-blue-100 border-l-2 border-blue-600 rounded px-1 py-0.5 overflow-hidden cursor-pointer"
-                    style={{ top: `${top}px`, height: `${height}px` }}
-                    title={`${meeting.title}\n${formatMsk(meeting.start_time, 'HH:mm')} - ${formatMsk(meeting.end_time, 'HH:mm')}`}
+                    className="absolute bg-blue-100 border-l-2 border-blue-600 rounded px-1 py-0.5 overflow-hidden cursor-pointer"
+                    style={{
+                      top: `${meeting.top}px`,
+                      height: `${meeting.height}px`,
+                      left: `calc(${meeting.col * widthPct}% + 2px)`,
+                      width: `calc(${widthPct}% - 4px)`,
+                    }}
+                    onClick={() => onMeetingClick?.(meeting)}
                   >
                     <p className="text-[9px] font-semibold text-blue-700 truncate leading-tight">
                       {meeting.title}
                     </p>
-                    {height > 24 && (
+                    {meeting.height > 24 && (
                       <p className="text-[8px] text-blue-600 truncate leading-tight">
                         {formatMsk(meeting.start_time, 'HH:mm')}
                       </p>
