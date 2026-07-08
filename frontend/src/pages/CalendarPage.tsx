@@ -9,6 +9,9 @@ import WeekView from '../components/WeekView';
 import ColleagueSearch from '../components/ColleagueSearch';
 import BottomNav from '../components/BottomNav';
 import SkeletonCalendar from '../components/SkeletonCalendar';
+import FabButton from '../components/FabButton';
+import MeetingFormModal from '../components/MeetingFormModal';
+import Toast from '../components/Toast';
 
 interface Meeting {
   id: string;
@@ -27,6 +30,9 @@ export default function CalendarPage() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [initialSlot, setInitialSlot] = useState<{ date: Date; hour?: number } | undefined>();
+  const [toast, setToast] = useState<string | null>(null);
 
   const fetchMeetings = useCallback(async () => {
     setLoading(true);
@@ -77,6 +83,21 @@ export default function CalendarPage() {
     trackMouse: false,
     trackTouch: true,
   });
+
+  const handleSlotClick = (hour: number) => {
+    setInitialSlot({ date: currentDate, hour });
+    setModalOpen(true);
+  };
+
+  const handleFabClick = () => {
+    setInitialSlot(undefined);
+    setModalOpen(true);
+  };
+
+  const handleMeetingSuccess = () => {
+    fetchMeetings();
+    setToast('Встреча создана');
+  };
 
   const dateDisplay = viewMode === 'day'
     ? format(currentDate, 'd MMMM yyyy', { locale: ru })
@@ -140,7 +161,7 @@ export default function CalendarPage() {
         {loading ? (
           <SkeletonCalendar />
         ) : viewMode === 'day' ? (
-          <DayView meetings={meetings} />
+          <DayView meetings={meetings} onSlotClick={handleSlotClick} />
         ) : (
           <WeekView meetings={meetings} currentDate={currentDate} onDayClick={(date) => {
             setCurrentDate(date);
@@ -155,9 +176,19 @@ export default function CalendarPage() {
       </div>
 
       {/* FAB */}
-      <button className="fixed bottom-20 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center z-40 active:scale-90 transition-transform">
-        <span className="material-symbols-outlined text-[32px]">add</span>
-      </button>
+      <FabButton onClick={handleFabClick} />
+
+      {/* Meeting Form Modal */}
+      <MeetingFormModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onSuccess={handleMeetingSuccess}
+        initialDate={initialSlot?.date}
+        initialHour={initialSlot?.hour}
+      />
+
+      {/* Toast */}
+      {toast && <Toast message={toast} onClose={() => setToast(null)} />}
     </div>
   );
 }
